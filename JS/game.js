@@ -83,6 +83,25 @@ class ConwaysGame {
         };
     }
 
+    ensureGridVisibleOnScreen() {
+        const scaledWidth = this.gridWidth * this.cellSize * this.camera.zoom;
+        const scaledHeight = this.gridHeight * this.cellSize * this.camera.zoom;
+        const left = this.camera.x;
+        const top = this.camera.y;
+        const right = left + scaledWidth;
+        const bottom = top + scaledHeight;
+
+        const intersectsScreen = right > 0 && bottom > 0 && left < this.canvas.width && top < this.canvas.height;
+        if (!intersectsScreen) {
+            const centered = this.getCenteredCamera();
+            this.camera.x = centered.x;
+            this.camera.y = centered.y;
+            this.targetCamera.x = centered.x;
+            this.targetCamera.y = centered.y;
+            this.targetZoom = this.camera.zoom;
+        }
+    }
+
     resizeGrid(newWidth, newHeight) {
         const nextGrid = Array(newHeight).fill().map(() => Array(newWidth).fill(0));
         const offsetX = Math.floor((newWidth - this.gridWidth) / 2);
@@ -226,10 +245,12 @@ class ConwaysGame {
                 ivec2 cell = ivec2(int(g.x), int(g.y));
                 float alive = texelFetch(u_state, cell, 0).r;
 
-                vec2 local = fract(world);
-                float lineX = step(local.x, 0.04);
-                float lineY = step(local.y, 0.04);
-                float line = min(1.0, lineX + lineY);
+                float pixelCell = u_cellSize * u_zoom;
+                vec2 cellPixels = vec2(max(1.0, pixelCell));
+                vec2 rel = mod(screen - u_camera, cellPixels);
+                float lineX = 1.0 - step(1.0, rel.x);
+                float lineY = 1.0 - step(1.0, rel.y);
+                float line = max(lineX, lineY) * step(4.0, pixelCell);
 
                 vec3 bg = mix(vec3(0.0), vec3(0.196), line);
                 vec3 fg = vec3(1.0);
@@ -765,6 +786,7 @@ class ConwaysGame {
         try {
             const state = JSON.parse(raw);
             this.applyState(state);
+            this.ensureGridVisibleOnScreen();
             if (showMessage) {
                 alert('Loaded from browser storage.');
             }
@@ -903,6 +925,7 @@ class ConwaysGame {
         this.isFrozen = false;
         this.stats = { born: 0, died: 0, lasting: 0, total: 0 };
         this.history = [];
+        this.ensureGridVisibleOnScreen();
         if (this.webglAvailable) {
             this.uploadGridToGPU();
             this.prevGpuFrame = null;
