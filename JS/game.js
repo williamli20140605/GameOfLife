@@ -17,7 +17,7 @@ class ConwaysGame {
         this.grid = this.createEmptyGrid();
 
         // Camera properties
-        const centeredCamera = this.getCenteredCamera();
+        const centeredCamera = this.getCenteredCamera(1.0);
         this.camera = {
             x: centeredCamera.x,
             y: centeredCamera.y,
@@ -37,7 +37,6 @@ class ConwaysGame {
 
         // Game state
         this.isRunning = false;
-        this.isFrozen = false;
         this.isDragging = false;
         this.lastCell = null;
         this.dragPaintValue = null;
@@ -51,6 +50,8 @@ class ConwaysGame {
         this.lastAutosaveTime = 0;
         this.MIN_UPDATE_INTERVAL = 5;
         this.MAX_UPDATE_INTERVAL = 1000;
+        this.LARGE_GRID_THRESHOLD = 2000;
+        this.LARGE_GRID_MIN_UPDATE_INTERVAL = 20;
         this.MAX_STEPS_PER_FRAME = 6;
 
         // Add movement state tracking
@@ -76,10 +77,10 @@ class ConwaysGame {
         return Array(this.gridHeight).fill().map(() => Array(this.gridWidth).fill(0));
     }
 
-    getCenteredCamera() {
+    getCenteredCamera(zoom = this.camera ? this.camera.zoom : 1.0) {
         return {
-            x: this.canvas.width / 2 - (this.gridWidth * this.cellSize) / 2,
-            y: this.canvas.height / 2 - (this.gridHeight * this.cellSize) / 2
+            x: this.canvas.width / 2 - (this.gridWidth * this.cellSize * zoom) / 2,
+            y: this.canvas.height / 2 - (this.gridHeight * this.cellSize * zoom) / 2
         };
     }
 
@@ -625,11 +626,11 @@ class ConwaysGame {
                     }
                     break;
                 case 'p': // Reset camera position and zoom
-                    this.targetCamera = this.getCenteredCamera();
                     this.targetZoom = 1.0;
+                    this.targetCamera = this.getCenteredCamera(this.targetZoom);
                     break;
                 case ' ': 
-                    if (!this.isRunning || this.isFrozen) {
+                    if (!this.isRunning) {
                         if (this.webglAvailable && this.useGpuSimulation) {
                             this.runGpuStep();
                             this.updateGpuStats();
@@ -660,7 +661,6 @@ class ConwaysGame {
 
     setupButtons() {
         this.startButton = document.getElementById('startButton');
-        this.freezeButton = document.getElementById('freezeButton');
         this.gpuButton = document.getElementById('gpuButton');
 
         this.startButton.onclick = (e) => {
@@ -675,20 +675,10 @@ class ConwaysGame {
         document.getElementById('clearButton').onclick = (e) => {
             this.grid = this.createEmptyGrid();
             this.isRunning = false;
-            this.isFrozen = false;
             this.stats = { born: 0, died: 0, lasting: 0, total: 0 };
             this.history = [];
             if (this.webglAvailable) {
                 this.uploadGridToGPU();
-            }
-            this.syncControlButtons();
-            e.target.blur();
-        };
-
-        this.freezeButton.onclick = (e) => {
-            this.isFrozen = !this.isFrozen;
-            if (this.isFrozen) {
-                this.ensureCpuGridSynced();
             }
             this.syncControlButtons();
             e.target.blur();
@@ -718,10 +708,7 @@ class ConwaysGame {
 
     syncControlButtons() {
         if (this.startButton) {
-            this.startButton.textContent = this.isRunning ? 'Running' : 'Start';
-        }
-        if (this.freezeButton) {
-            this.freezeButton.style.backgroundColor = this.isFrozen ? '#6495ED' : '#ffffff';
+            this.startButton.textContent = this.isRunning ? 'Stop' : 'Start';
         }
         if (this.gpuButton) {
             if (!this.webglAvailable) {
@@ -954,7 +941,6 @@ class ConwaysGame {
         }
 
         this.isRunning = false;
-        this.isFrozen = false;
         this.stats = { born: 0, died: 0, lasting: 0, total: 0 };
         this.history = [];
         this.ensureGridVisibleOnScreen();
@@ -1212,9 +1198,23 @@ class ConwaysGame {
                 tickNumberInput.value = this.UPDATE_INTERVAL;
                 return;
             }
-            const clamped = Math.max(this.MIN_UPDATE_INTERVAL, Math.min(this.MAX_UPDATE_INTERVAL, parsed));
+            const minTickForCurrentGrid = (this.gridWidth >= this.LARGE_GRID_THRESHOLD || this.gridHeight >= this.LARGE_GRID_THRESHOLD)
+                ? this.LARGE_GRID_MIN_UPDATE_INTERVAL
+                : this.MIN_UPDATE_INTERVAL;
+            const clamped = Math.max(minTickForCurrentGrid, Math.min(this.MAX_UPDATE_INTERVAL, parsed));
             this.UPDATE_INTERVAL = clamped;
             tickNumberInput.value = clamped;
+        };
+
+        const syncTickRateConstraintForGrid = (gridSize) => {
+            const minTickForGrid = gridSize >= this.LARGE_GRID_THRESHOLD
+                ? this.LARGE_GRID_MIN_UPDATE_INTERVAL
+                : this.MIN_UPDATE_INTERVAL;
+            tickNumberInput.min = String(minTickForGrid);
+            if (this.UPDATE_INTERVAL < minTickForGrid) {
+                this.UPDATE_INTERVAL = minTickForGrid;
+                tickNumberInput.value = minTickForGrid;
+            }
         };
 
         applyTickRateButton.addEventListener('click', () => {
@@ -1270,6 +1270,7 @@ class ConwaysGame {
             if (nextSize !== this.gridWidth || nextSize !== this.gridHeight) {
                 this.resizeGrid(nextSize, nextSize);
             }
+            syncTickRateConstraintForGrid(nextSize);
         };
 
         applyGridSizeButton.addEventListener('click', applyGridSize);
@@ -1287,6 +1288,7 @@ class ConwaysGame {
         gridSizeRow.appendChild(gridSizeInput);
         gridSizeRow.appendChild(applyGridSizeButton);
         tickControl.appendChild(gridSizeRow);
+        syncTickRateConstraintForGrid(this.gridWidth);
         document.body.appendChild(tickControl);
     }
 
@@ -1306,7 +1308,7 @@ class ConwaysGame {
             this.camera.zoom += (this.targetZoom - this.camera.zoom) * this.ZOOM_SMOOTHING;
 
             // Update grid based on speed setting
-            if (this.isRunning && !this.isFrozen) {
+            if (this.isRunning) {
                 let steps = 0;
                 while (currentTime - this.lastUpdateTime >= this.UPDATE_INTERVAL && steps < this.MAX_STEPS_PER_FRAME) {
                     if (this.webglAvailable && this.useGpuSimulation) {
