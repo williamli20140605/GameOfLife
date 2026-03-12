@@ -102,6 +102,7 @@ class ConwaysGame {
         this.camera.y = centered.y;
         this.targetCamera.x = centered.x;
         this.targetCamera.y = centered.y;
+        this.stats.total = this.grid.flat().reduce((a, b) => a + b, 0);
     }
 
     resizeCanvas() {
@@ -153,6 +154,10 @@ class ConwaysGame {
         
         window.addEventListener('keydown', (e) => {
             if (this.isTypingInInput()) {
+                this.moveKeys.w = false;
+                this.moveKeys.a = false;
+                this.moveKeys.s = false;
+                this.moveKeys.d = false;
                 return;
             }
             switch(e.key) {
@@ -197,9 +202,6 @@ class ConwaysGame {
         });
 
         window.addEventListener('keyup', (e) => {
-            if (this.isTypingInInput()) {
-                return;
-            }
             if (['w', 's', 'a', 'd'].includes(e.key)) {
                 this.moveKeys[e.key] = false;
             }
@@ -297,10 +299,22 @@ class ConwaysGame {
     }
 
     getSerializableState() {
+        const cells = [];
+        for (let y = 0; y < this.gridHeight; y++) {
+            for (let x = 0; x < this.gridWidth; x++) {
+                if (this.grid[y][x] === 1) {
+                    cells.push([x, y]);
+                }
+            }
+        }
+
         return {
-            version: 1,
+            version: 2,
+            format: 'cells',
             savedAt: new Date().toISOString(),
-            grid: this.grid,
+            width: this.gridWidth,
+            height: this.gridHeight,
+            cells,
             camera: {
                 x: this.camera.x,
                 y: this.camera.y,
@@ -397,12 +411,62 @@ class ConwaysGame {
         return nextGrid;
     }
 
+    normalizeImportedCells(cellsData, sourceWidth, sourceHeight) {
+        if (!Array.isArray(cellsData)) {
+            throw new Error('Invalid cells data');
+        }
+
+        if (!Number.isInteger(sourceWidth) || sourceWidth <= 0) {
+            sourceWidth = this.gridWidth;
+        }
+        if (!Number.isInteger(sourceHeight) || sourceHeight <= 0) {
+            sourceHeight = this.gridHeight;
+        }
+
+        const nextGrid = this.createEmptyGrid();
+        const startY = Math.floor((this.gridHeight - sourceHeight) / 2);
+        const startX = Math.floor((this.gridWidth - sourceWidth) / 2);
+
+        for (const pair of cellsData) {
+            if (!Array.isArray(pair) || pair.length < 2) {
+                continue;
+            }
+            const rawX = Number(pair[0]);
+            const rawY = Number(pair[1]);
+            if (!Number.isFinite(rawX) || !Number.isFinite(rawY)) {
+                continue;
+            }
+
+            const x = Math.floor(rawX);
+            const y = Math.floor(rawY);
+            const targetX = startX + x;
+            const targetY = startY + y;
+            if (targetY >= 0 && targetY < this.gridHeight && targetX >= 0 && targetX < this.gridWidth) {
+                nextGrid[targetY][targetX] = 1;
+            }
+        }
+
+        return nextGrid;
+    }
+
     applyState(state) {
         if (!state || typeof state !== 'object') {
             throw new Error('Invalid save format');
         }
 
-        this.grid = this.normalizeImportedGrid(state.grid);
+        if (Array.isArray(state.grid)) {
+            this.grid = this.normalizeImportedGrid(state.grid);
+        } else {
+            const cellsData = Array.isArray(state.cells)
+                ? state.cells
+                : (state.pattern && Array.isArray(state.pattern.cells) ? state.pattern.cells : null);
+            if (!cellsData) {
+                throw new Error('Save file must contain grid or cells');
+            }
+            const sourceWidth = state.width ?? (state.pattern ? state.pattern.width : undefined);
+            const sourceHeight = state.height ?? (state.pattern ? state.pattern.height : undefined);
+            this.grid = this.normalizeImportedCells(cellsData, sourceWidth, sourceHeight);
+        }
 
         if (state.camera && Number.isFinite(state.camera.x) && Number.isFinite(state.camera.y) && Number.isFinite(state.camera.zoom)) {
             this.camera.x = state.camera.x;
@@ -649,14 +713,6 @@ class ConwaysGame {
 
         input.addEventListener('input', (e) => {
             applyTickRate(e.target.value);
-        });
-
-        tickNumberInput.addEventListener('input', (e) => {
-            const value = e.target.value;
-            if (value === '') {
-                return;
-            }
-            applyTickRate(value);
         });
 
         tickNumberInput.addEventListener('keydown', (e) => {
