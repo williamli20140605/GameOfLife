@@ -1,79 +1,73 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>HighLife (B36/S23)</title>
-  <style>
-    :root {
-      --bg: #0d1117;
-      --panel: #161b22;
-      --text: #e6edf3;
-      --muted: #8b949e;
-      --line: #30363d;
-      --accent: #2ea043;
-    }
-
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      background: var(--bg);
-      color: var(--text);
-      display: grid;
-      grid-template-rows: auto 1fr;
-      height: 100vh;
-    }
-
-    .bar {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      align-items: center;
-      padding: 10px;
-      border-bottom: 1px solid var(--line);
-      background: var(--panel);
-    }
-
-    button, input {
-      background: #21262d;
-      color: var(--text);
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      padding: 6px 10px;
-    }
-
-    button { cursor: pointer; }
-    button:hover { border-color: var(--accent); }
-
-    .canvas-wrap {
-      display: grid;
-      place-items: center;
-      padding: 8px;
-    }
-
-    canvas {
-      max-width: 100%;
-      max-height: 100%;
-      border: 1px solid var(--line);
-      image-rendering: pixelated;
-    }
-
-    .meta { color: var(--muted); font-size: 12px; }
-  </style>
+    <title>HighLife (B36/S23)</title>
+    <style>
+        body {
+            margin: 0;
+            background: black;
+            color: white;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+        }
+        #gameCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        .controls {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            z-index: 1;
+        }
+        .button {
+            margin: 0 5px;
+            padding: 10px 20px;
+            cursor: pointer;
+            outline: none;
+            user-select: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+        }
+        .button:focus {
+            outline: none;
+            box-shadow: none;
+        }
+        .stats {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            z-index: 1;
+        }
+        #populationGraph {
+            margin-top: 10px;
+            background: #323232;
+        }
+    </style>
 </head>
 <body>
-  <div class="bar">
-    <button id="toggleBtn">Start</button>
-    <button id="stepBtn">Step</button>
-    <button id="clearBtn">Clear</button>
-    <button id="randBtn">Random</button>
-    <label>Speed(ms) <input id="speedInput" type="number" min="10" max="1000" value="80"></label>
-    <span class="meta" id="meta"></span>
-  </div>
-  <div class="canvas-wrap">
-    <canvas id="canvas" width="960" height="640"></canvas>
-  </div>
-  <script src="app.js"></script>
+    <canvas id="gameCanvas"></canvas>
+    <div class="controls">
+        <button id="startButton" class="button">Start</button>
+        <button id="clearButton" class="button">Clear</button>
+        <button id="randomButton" class="button">Random</button>
+        <button id="exportButton" class="button">Export</button>
+        <button id="importButton" class="button">Import</button>
+        <button id="gpuButton" class="button">GPU: On</button>
+    </div>
+    <input id="importFileInput" type="file" accept="application/json" style="display: none;">
+    <div class="stats">
+        <div id="cameraInfo"></div>
+        <div id="statsInfo"></div>
+        <canvas id="populationGraph" width="200" height="100"></canvas>
+    </div>
+    <script>
+        window.GOL_CONFIG = {
+            birthOnSix: true
+        };
+    </script>
+    <script src="../ConwaysGameOfLife/JS/game.js"></script>
 </body>
 </html>
