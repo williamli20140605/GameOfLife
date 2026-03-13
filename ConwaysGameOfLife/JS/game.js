@@ -1471,6 +1471,7 @@ class ConwaysGame {
         const gridSizeInput = document.createElement('input');
         gridSizeInput.type = 'number';
         gridSizeInput.min = '50';
+        gridSizeInput.max = '5000';
         gridSizeInput.step = '10';
         gridSizeInput.value = this.gridWidth;
         gridSizeInput.style.width = '70px';
@@ -1486,7 +1487,7 @@ class ConwaysGame {
             if (!Number.isFinite(parsed)) {
                 return;
             }
-            const nextSize = Math.max(50, parsed);
+            const nextSize = Math.max(50, Math.min(5000, parsed));
             gridSizeInput.value = nextSize;
             if (nextSize !== this.gridWidth || nextSize !== this.gridHeight) {
                 this.resizeGrid(nextSize, nextSize);
