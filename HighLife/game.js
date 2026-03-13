@@ -806,12 +806,260 @@ class ConwaysGame {
     async importFromFile(file) {
         try {
             const text = await file.text();
-            const state = JSON.parse(text);
+            const state = this.parseImportedText(text, this.getImportName(file.name));
             this.applyState(state);
             alert('Imported world successfully.');
         } catch (error) {
             alert('Failed to import file: ' + error.message);
         }
+    }
+
+    getImportName(fileName) {
+        if (typeof fileName !== 'string' || fileName.length === 0) {
+            return 'Imported Pattern';
+        }
+        const base = fileName.replace(/\.[^/.]+$/, '').trim();
+        return base || 'Imported Pattern';
+    }
+
+    parseImportedText(text, fallbackName) {
+        const trimmed = typeof text === 'string' ? text.trim() : '';
+        if (!trimmed) {
+            throw new Error('File is empty');
+        }
+
+        try {
+            return JSON.parse(trimmed);
+        } catch (jsonError) {
+            if (trimmed.startsWith('[M2]')) {
+                return this.parseMacrocellToState(trimmed, fallbackName);
+            }
+            return this.parseRleToState(trimmed, fallbackName);
+        }
+    }
+
+    parseMacrocellToState(mcText, fallbackName) {
+        const lines = mcText
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter((line) => line.length > 0);
+
+        if (!lines[0] || !lines[0].startsWith('[M2]')) {
+            throw new Error('Invalid macrocell file');
+        }
+
+        const nodes = [null];
+
+        for (let i = 1; i < lines.length; i++) {
+            const line = lines[i];
+            if (line.startsWith('#')) {
+                continue;
+            }
+
+            if (/^[.*$]+$/.test(line)) {
+                const cells = [];
+                let x = 0;
+                let y = 0;
+                for (let j = 0; j < line.length; j++) {
+                    const token = line[j];
+                    if (token === '.') {
+                        x += 1;
+                    } else if (token === '*') {
+                        cells.push([x, y]);
+                        x += 1;
+                    } else if (token === '$') {
+                        y += 1;
+                        x = 0;
+                    }
+                }
+                nodes.push({ type: 'leaf', level: 3, size: 8, cells });
+                continue;
+            }
+
+            const match = line.match(/^(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)$/);
+            if (!match) {
+                continue;
+            }
+
+            const level = parseInt(match[1], 10);
+            const nw = parseInt(match[2], 10);
+            const ne = parseInt(match[3], 10);
+            const sw = parseInt(match[4], 10);
+            const se = parseInt(match[5], 10);
+            const size = Math.pow(2, level);
+            nodes.push({ type: 'node', level, size, nw, ne, sw, se });
+        }
+
+        const rootId = nodes.length - 1;
+        const root = nodes[rootId];
+        if (!root) {
+            throw new Error('Macrocell has no pattern data');
+        }
+
+        const sourceWidth = root.size;
+        const sourceHeight = root.size;
+        const startY = Math.floor((this.gridHeight - sourceHeight) / 2);
+        const startX = Math.floor((this.gridWidth - sourceWidth) / 2);
+
+        const minSourceX = Math.max(0, -startX);
+        const minSourceY = Math.max(0, -startY);
+        const maxSourceX = Math.min(sourceWidth - 1, this.gridWidth - 1 - startX);
+        const maxSourceY = Math.min(sourceHeight - 1, this.gridHeight - 1 - startY);
+
+        if (minSourceX > maxSourceX || minSourceY > maxSourceY) {
+            return {
+                version: 2,
+                format: 'cells',
+                name: fallbackName || 'Imported Macrocell',
+                width: sourceWidth,
+                height: sourceHeight,
+                cells: []
+            };
+        }
+
+        const cells = [];
+
+        const visit = (id, originX, originY) => {
+            if (id === 0) {
+                return;
+            }
+
+            const node = nodes[id];
+            if (!node) {
+                return;
+            }
+
+            const nodeMinX = originX;
+            const nodeMinY = originY;
+            const nodeMaxX = originX + node.size - 1;
+            const nodeMaxY = originY + node.size - 1;
+            if (nodeMaxX < minSourceX || nodeMaxY < minSourceY || nodeMinX > maxSourceX || nodeMinY > maxSourceY) {
+                return;
+            }
+
+            if (node.type === 'leaf') {
+                for (const pair of node.cells) {
+                    const x = originX + pair[0];
+                    const y = originY + pair[1];
+                    if (x >= minSourceX && x <= maxSourceX && y >= minSourceY && y <= maxSourceY) {
+                        cells.push([x, y]);
+                    }
+                }
+                return;
+            }
+
+            const half = node.size / 2;
+            visit(node.nw, originX, originY);
+            visit(node.ne, originX + half, originY);
+            visit(node.sw, originX, originY + half);
+            visit(node.se, originX + half, originY + half);
+        };
+
+        visit(rootId, 0, 0);
+
+        return {
+            version: 2,
+            format: 'cells',
+            name: fallbackName || 'Imported Macrocell',
+            width: sourceWidth,
+            height: sourceHeight,
+            cells
+        };
+    }
+
+    parseRleToState(rleText, fallbackName) {
+        const lines = rleText
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter((line) => line.length > 0 && !line.startsWith('#'));
+
+        if (lines.length === 0) {
+            throw new Error('RLE is empty');
+        }
+
+        let sourceWidth = null;
+        let sourceHeight = null;
+        const bodyParts = [];
+
+        for (const line of lines) {
+            if (/^x\s*=/.test(line.toLowerCase())) {
+                const widthMatch = line.match(/x\s*=\s*(\d+)/i);
+                const heightMatch = line.match(/y\s*=\s*(\d+)/i);
+                if (widthMatch) {
+                    sourceWidth = parseInt(widthMatch[1], 10);
+                }
+                if (heightMatch) {
+                    sourceHeight = parseInt(heightMatch[1], 10);
+                }
+            } else {
+                bodyParts.push(line);
+            }
+        }
+
+        const body = bodyParts.join('');
+        if (!body.includes('!')) {
+            throw new Error('Invalid RLE: missing terminator (!)');
+        }
+
+        const cells = [];
+        let x = 0;
+        let y = 0;
+        let maxX = 0;
+        let maxY = 1;
+        let countBuffer = '';
+
+        for (let i = 0; i < body.length; i++) {
+            const token = body[i];
+            if (token >= '0' && token <= '9') {
+                countBuffer += token;
+                continue;
+            }
+
+            const count = countBuffer.length > 0 ? parseInt(countBuffer, 10) : 1;
+            countBuffer = '';
+
+            if (token === 'b') {
+                x += count;
+                maxX = Math.max(maxX, x);
+                continue;
+            }
+
+            if (token === 'o') {
+                for (let j = 0; j < count; j++) {
+                    cells.push([x + j, y]);
+                }
+                x += count;
+                maxX = Math.max(maxX, x);
+                maxY = Math.max(maxY, y + 1);
+                continue;
+            }
+
+            if (token === '$') {
+                y += count;
+                x = 0;
+                maxY = Math.max(maxY, y + 1);
+                continue;
+            }
+
+            if (token === '!') {
+                break;
+            }
+
+            if (token === ',' || token === ' ' || token === '\t' || token === '\r' || token === '\n') {
+                continue;
+            }
+
+            throw new Error('Invalid RLE token: ' + token);
+        }
+
+        return {
+            version: 2,
+            format: 'cells',
+            name: fallbackName || 'Imported Pattern',
+            width: Number.isInteger(sourceWidth) && sourceWidth > 0 ? sourceWidth : Math.max(1, maxX),
+            height: Number.isInteger(sourceHeight) && sourceHeight > 0 ? sourceHeight : Math.max(1, maxY),
+            cells
+        };
     }
 
     normalizeImportedGrid(gridData) {

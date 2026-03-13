@@ -45,7 +45,7 @@ To keep repository size small, sample patterns use a lightweight `cells` format 
 
 - `cells` contains only living cells.
 - `width`/`height` describe source pattern bounds and are used for centered import.
-- Import also supports legacy `grid` format files.
+- Import also supports legacy `grid` format files, standard `.rle` files, and Golly `.mc` (macrocell) files.
 
 ## Included sample patterns
 
