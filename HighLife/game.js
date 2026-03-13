@@ -673,6 +673,11 @@ class ConwaysGame {
 
         this.startButton.onclick = (e) => {
             this.isRunning = !this.isRunning;
+            if (this.isRunning) {
+                this.isDragging = false;
+                this.dragPaintValue = null;
+                this.lastCell = null;
+            }
             if (!this.isRunning) {
                 this.ensureCpuGridSynced();
             }
@@ -1233,6 +1238,13 @@ class ConwaysGame {
     handleMouseDown(e) {
         e.preventDefault();
 
+        if (this.isRunning) {
+            this.isDragging = false;
+            this.dragPaintValue = null;
+            this.lastCell = null;
+            return;
+        }
+
         this.ensureCpuGridSynced();
 
         const rect = this.canvas.getBoundingClientRect();
@@ -1260,6 +1272,13 @@ class ConwaysGame {
     }
 
     handleMouseMove(e) {
+        if (this.isRunning) {
+            this.isDragging = false;
+            this.dragPaintValue = null;
+            this.lastCell = null;
+            return;
+        }
+
         if (!this.isDragging) return;
         
         const rect = this.canvas.getBoundingClientRect();
