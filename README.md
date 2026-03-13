@@ -1,58 +1,35 @@
-# Conway's Game of Life
+# GameOfLife
 
-Interactive Conway simulator with pan/zoom, stats, persistence, and pattern import/export.
+This repository contains the full Game of Life project, including browser apps for both Conway and HighLife.
 
-## CPU vs GPU
+## Apps
 
-- Default mode uses **GPU simulation** via WebGL2 (`GPU: On`) for faster ticks on larger grids.
-- If WebGL2 is unavailable, the app automatically falls back to CPU mode.
-- You can toggle simulation backend at runtime with the `GPU: On/Off` button while keeping the same UI/controls.
+- `ConwaysGameOfLife` - Conway's Life (`B3/S23`)
+- `HighLife` - HighLife (`B36/S23`)
+
+Both web apps support:
+
+- CPU and WebGL2 GPU simulation (`GPU: On/Off`)
+- Activated-region optimization for large grids
+- Pan/zoom, tick-rate control, grid-size control, and import/export
 
 ## Run
 
-Open `JS/index.html` in your browser.
+Open either entry page in your browser:
 
-## Controls
+- `ConwaysGameOfLife/JS/index.html`
+- `HighLife/JS/index.html`
 
-- `W/A/S/D`: move camera
-- `Arrow Left/Right`: zoom out/in
-- `P`: reset camera and zoom
-- `Space`: single step (when stopped or frozen)
-- Mouse wheel or touchpad two-finger vertical scroll: zoom at cursor
-- Left click/drag: draw living cells
-- Middle click/drag: erase cells
-- `GPU: On/Off`: switch between GPU simulation and CPU simulation (WebGL2 only)
+## Repository Layout
 
-## Save / Load / Export / Import
+- `ConwaysGameOfLife/Figures/` - Conway sample patterns
+- `ConwaysGameOfLife/JS/` - Conway web app
+- `ConwaysGameOfLife/Python/` - Python implementation
+- `HighLife/Figures/` - HighLife sample patterns
+- `HighLife/JS/` - HighLife web app
+- `ConwaysGameOfLife.py` - legacy single-file script
 
-- `Save`: save current world to browser local storage
-- `Load`: restore from browser local storage
-- `Export`: download current world as JSON
-- `Import`: load JSON world file
+## Notes
 
-## Lightweight pattern format (v2)
-
-To keep repository size small, sample patterns use a lightweight `cells` format instead of full 2D grid dumps.
-
-```json
-{
-  "version": 2,
-  "format": "cells",
-  "name": "Pattern Name",
-  "width": 500,
-  "height": 500,
-  "cells": [[x1, y1], [x2, y2]]
-}
-```
-
-- `cells` contains only living cells.
-- `width`/`height` describe source pattern bounds and are used for centered import.
-- Import also supports legacy `grid` format files.
-
-## Included sample patterns
-
-- `JS/twin_glider_creators_x2.json`
-- `JS/twin_glider_annihilation_x2.json`
-- `JS/twin_glider_annihilation_x2_A.json`
-- `JS/twin_glider_annihilation_x2_B.json`
-- `JS/twin_glider_annihilation_x2_C.json`
+- `ConwaysGameOfLife/ImportedPatterns/` is intentionally excluded from git.
+- Pattern JSON files use lightweight `cells` format where possible.
