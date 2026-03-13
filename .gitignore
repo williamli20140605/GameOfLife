@@ -1,3 +1,4 @@
 __pycache__/
 *.pyc
 .DS_Store
+ConwaysGameOfLife/ImportedPatterns/scalable-computer_128_32_256.mc
