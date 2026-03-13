@@ -23,7 +23,7 @@ class ConwaysGame {
             y: centeredCamera.y,
             zoom: 1.0
         };
-        this.MIN_ZOOM = 0.05;
+        this.MIN_ZOOM = 0.001;
         this.MAX_ZOOM = 5.0;
         this.ZOOM_SPEED = 0.1;
         this.MOVE_SPEED = 10;
@@ -574,8 +574,8 @@ class ConwaysGame {
 
             // Works with both mouse wheel and touchpad scrolling
             const delta = -e.deltaY;
-            const zoomDelta = (delta / 300) * this.ZOOM_SPEED;
-            const newZoom = Math.max(this.MIN_ZOOM, Math.min(this.MAX_ZOOM, this.targetZoom + zoomDelta));
+            const zoomMultiplier = Math.pow(1 + this.ZOOM_SPEED, delta / 300);
+            const newZoom = Math.max(this.MIN_ZOOM, Math.min(this.MAX_ZOOM, this.targetZoom * zoomMultiplier));
 
             // Adjust camera position to zoom toward cursor position
             if (newZoom !== this.targetZoom) {
@@ -607,7 +607,8 @@ class ConwaysGame {
                     e.preventDefault();
                     const centerX = this.canvas.width / 2;
                     const centerY = this.canvas.height / 2;
-                    const newZoomOut = Math.max(this.MIN_ZOOM, this.targetZoom - this.ZOOM_SPEED);
+                    const keyZoomMultiplier = 1 + this.ZOOM_SPEED;
+                    const newZoomOut = Math.max(this.MIN_ZOOM, this.targetZoom / keyZoomMultiplier);
                     if (newZoomOut !== this.targetZoom) {
                         const zoomFactorOut = newZoomOut / this.targetZoom;
                         this.targetCamera.x = centerX - (centerX - this.targetCamera.x) * zoomFactorOut;
@@ -619,7 +620,8 @@ class ConwaysGame {
                     e.preventDefault();
                     const centerX2 = this.canvas.width / 2;
                     const centerY2 = this.canvas.height / 2;
-                    const newZoomIn = Math.min(this.MAX_ZOOM, this.targetZoom + this.ZOOM_SPEED);
+                    const keyZoomMultiplier2 = 1 + this.ZOOM_SPEED;
+                    const newZoomIn = Math.min(this.MAX_ZOOM, this.targetZoom * keyZoomMultiplier2);
                     if (newZoomIn !== this.targetZoom) {
                         const zoomFactorIn = newZoomIn / this.targetZoom;
                         this.targetCamera.x = centerX2 - (centerX2 - this.targetCamera.x) * zoomFactorIn;
