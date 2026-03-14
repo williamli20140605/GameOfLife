@@ -2057,10 +2057,9 @@ class ConwaysGame {
             const requestedSize = Math.max(50, parsed);
             const maxAllowed = this.getMaxAllowedGridSize();
             let nextSize = requestedSize;
-            let wasClamped = false;
             if (requestedSize > maxAllowed) {
                 nextSize = maxAllowed;
-                wasClamped = true;
+                alert(`Requested size ${requestedSize} is too large. Max safe size on this device is ${maxAllowed}.`);
             }
             gridSizeInput.value = nextSize;
             if (nextSize !== this.gridWidth || nextSize !== this.gridHeight) {
@@ -2071,9 +2070,6 @@ class ConwaysGame {
                 }
             }
             syncTickRateConstraintForGrid(nextSize);
-            if (wasClamped) {
-                alert(`Requested size ${requestedSize} is too large. Max safe size on this device is ${maxAllowed}.`);
-            }
         };
 
         applyGridSizeButton.addEventListener('click', applyGridSize);
