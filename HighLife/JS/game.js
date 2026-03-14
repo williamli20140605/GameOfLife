@@ -15,7 +15,6 @@ class ConwaysGame {
         this.lastGpuStatsTick = -1;
         this.lastGpuStatsSampleTime = 0;
         this.gpuActivatedBoundsBufferA = null;
-        this.gpuActivatedBoundsBufferB = null;
         this.gpuActivatedBoundsTickCounter = 0;
         this.GPU_ACTIVATED_REGION_SAMPLE_INTERVAL = 10;
         this.GPU_ACTIVATED_REGION_ENABLE_AREA_RATIO = 0.85;
@@ -364,7 +363,8 @@ class ConwaysGame {
                     nextState = (n == 3 || (u_birthOnSix == 1 && n == 6)) ? 1 : 0;
                 }
 
-                outColor = vec4(float(nextState), 0.0, 0.0, 1.0);
+                float changed = (nextState == alive) ? 0.0 : 1.0;
+                outColor = vec4(float(nextState), changed, 0.0, 1.0);
             }
         `;
 
@@ -639,7 +639,7 @@ class ConwaysGame {
         };
     }
 
-    sampleGpuActivatedBoundsFromRect(rect, sourceIndex, destinationIndex) {
+    sampleGpuActivatedBoundsFromRect(rect, destinationIndex) {
         if (!rect || rect.width <= 0 || rect.height <= 0) {
             return {
                 nextActivatedBounds: null,
@@ -652,13 +652,10 @@ class ConwaysGame {
         const bufferSize = rect.width * rect.height * 4;
         if (!this.gpuActivatedBoundsBufferA || this.gpuActivatedBoundsBufferA.length !== bufferSize) {
             this.gpuActivatedBoundsBufferA = new Uint8Array(bufferSize);
-            this.gpuActivatedBoundsBufferB = new Uint8Array(bufferSize);
         }
 
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this.stateFramebuffers[sourceIndex]);
-        gl.readPixels(rect.minX, rect.minY, rect.width, rect.height, gl.RGBA, gl.UNSIGNED_BYTE, this.gpuActivatedBoundsBufferA);
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.stateFramebuffers[destinationIndex]);
-        gl.readPixels(rect.minX, rect.minY, rect.width, rect.height, gl.RGBA, gl.UNSIGNED_BYTE, this.gpuActivatedBoundsBufferB);
+        gl.readPixels(rect.minX, rect.minY, rect.width, rect.height, gl.RGBA, gl.UNSIGNED_BYTE, this.gpuActivatedBoundsBufferA);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
         let minX = this.gridWidth;
@@ -673,9 +670,9 @@ class ConwaysGame {
         for (let y = 0; y < rect.height; y++) {
             const gy = rect.minY + y;
             for (let x = 0; x < rect.width; x++) {
-                const previousAlive = this.gpuActivatedBoundsBufferA[idx] > 127;
-                const nextAlive = this.gpuActivatedBoundsBufferB[idx] > 127;
-                if (previousAlive !== nextAlive) {
+                const nextAlive = this.gpuActivatedBoundsBufferA[idx] > 127;
+                const changed = this.gpuActivatedBoundsBufferA[idx + 1] > 127;
+                if (changed) {
                     const gx = rect.minX + x;
                     hasChanges = true;
                     if (nextAlive) {
@@ -763,7 +760,7 @@ class ConwaysGame {
         this.sourceIndex = dst;
         this.cpuGridDirtyFromGpu = true;
 
-        const diffStats = this.sampleGpuActivatedBoundsFromRect(rect, src, dst);
+        const diffStats = this.sampleGpuActivatedBoundsFromRect(rect, dst);
         const previousTotal = this.liveCellCount;
         const born = diffStats.born;
         const died = diffStats.died;
@@ -813,7 +810,6 @@ class ConwaysGame {
         this.lastGpuStatsTick = -1;
         this.lastGpuStatsSampleTime = 0;
         this.gpuActivatedBoundsBufferA = null;
-        this.gpuActivatedBoundsBufferB = null;
         this.gpuActivatedBoundsTickCounter = 0;
     }
 
