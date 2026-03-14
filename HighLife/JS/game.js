@@ -388,7 +388,8 @@ class ConwaysGame {
             void main() {
                 float yTop = u_canvasSize.y - gl_FragCoord.y;
                 vec2 screen = vec2(gl_FragCoord.x, yTop);
-                vec2 world = (screen - u_camera) / (u_cellSize * u_zoom);
+                vec2 camera = floor(u_camera + vec2(0.5));
+                vec2 world = (screen - camera) / (u_cellSize * u_zoom);
                 vec2 g = floor(world);
 
                 if (g.x < 0.0 || g.y < 0.0 || g.x >= u_gridSize.x || g.y >= u_gridSize.y) {
@@ -401,7 +402,7 @@ class ConwaysGame {
 
                 float pixelCell = u_cellSize * u_zoom;
                 vec2 cellPixels = vec2(max(1.0, pixelCell));
-                vec2 rel = mod(screen - u_camera, cellPixels);
+                vec2 rel = mod(screen - camera, cellPixels);
                 float lineX = 1.0 - step(1.0, rel.x);
                 float lineY = 1.0 - step(1.0, rel.y);
                 float line = max(lineX, lineY) * smoothstep(2.0, 5.0, pixelCell);
@@ -640,7 +641,11 @@ class ConwaysGame {
 
     sampleGpuActivatedBoundsFromRect(rect, sourceIndex, destinationIndex) {
         if (!rect || rect.width <= 0 || rect.height <= 0) {
-            return null;
+            return {
+                nextActivatedBounds: null,
+                born: 0,
+                died: 0
+            };
         }
 
         const gl = this.gl;
@@ -661,6 +666,8 @@ class ConwaysGame {
         let minY = this.gridHeight;
         let maxY = -1;
         let hasChanges = false;
+        let born = 0;
+        let died = 0;
 
         let idx = 0;
         for (let y = 0; y < rect.height; y++) {
@@ -671,6 +678,11 @@ class ConwaysGame {
                 if (previousAlive !== nextAlive) {
                     const gx = rect.minX + x;
                     hasChanges = true;
+                    if (nextAlive) {
+                        born += 1;
+                    } else {
+                        died += 1;
+                    }
                     if (gx < minX) minX = gx;
                     if (gx > maxX) maxX = gx;
                     if (gy < minY) minY = gy;
@@ -680,11 +692,13 @@ class ConwaysGame {
             }
         }
 
-        if (!hasChanges) {
-            return null;
-        }
-
-        return this.expandBounds({ minX, maxX, minY, maxY }, 1);
+        return {
+            nextActivatedBounds: hasChanges
+                ? this.expandBounds({ minX, maxX, minY, maxY }, 1)
+                : null,
+            born,
+            died
+        };
     }
 
     runGpuStep() {
@@ -698,6 +712,12 @@ class ConwaysGame {
 
         const rect = this.getGpuSimulationRect();
         if (!rect) {
+            const total = this.liveCellCount;
+            this.stats = { born: 0, died: 0, lasting: total, total };
+            this.history.push(total);
+            if (this.history.length > this.MAX_HISTORY) {
+                this.history.shift();
+            }
             this.activatedBounds = null;
             this.activatedBoundsMayNeedRecalc = false;
             this.gpuActivatedBoundsTickCounter = 0;
@@ -743,23 +763,23 @@ class ConwaysGame {
         this.sourceIndex = dst;
         this.cpuGridDirtyFromGpu = true;
 
-        let nextActiveBounds = this.expandBounds(rect, 1);
-        const shouldSampleChanges = useActiveRegion || (rect.width * rect.height < this.GPU_STATS_DISABLE_DURING_RUN_AREA);
-        if (shouldSampleChanges) {
-            this.gpuActivatedBoundsTickCounter += 1;
-            if (
-                this.gpuActivatedBoundsTickCounter >= this.GPU_ACTIVATED_REGION_SAMPLE_INTERVAL ||
-                (rect.width * rect.height <= 250000)
-            ) {
-                nextActiveBounds = this.sampleGpuActivatedBoundsFromRect(rect, src, dst);
-                this.gpuActivatedBoundsTickCounter = 0;
-            }
-        } else {
-            this.gpuActivatedBoundsTickCounter = 0;
+        const diffStats = this.sampleGpuActivatedBoundsFromRect(rect, src, dst);
+        const previousTotal = this.liveCellCount;
+        const born = diffStats.born;
+        const died = diffStats.died;
+        const total = Math.max(0, previousTotal + born - died);
+        const lasting = Math.max(0, previousTotal - died);
+
+        this.liveCellCount = total;
+        this.stats = { born, died, lasting, total };
+        this.history.push(total);
+        if (this.history.length > this.MAX_HISTORY) {
+            this.history.shift();
         }
 
-        this.activatedBounds = nextActiveBounds;
+        this.activatedBounds = diffStats.nextActivatedBounds;
         this.activatedBoundsMayNeedRecalc = false;
+        this.gpuActivatedBoundsTickCounter = 0;
     }
 
     drawWebGL() {
@@ -1031,7 +1051,6 @@ class ConwaysGame {
                         if (this.webglAvailable && this.useGpuSimulation) {
                             this.runGpuStep();
                             this.tickCount += 1;
-                            this.updateGpuStats();
                         } else {
                             this.updateGrid();
                             if (this.webglAvailable) {
@@ -1070,12 +1089,7 @@ class ConwaysGame {
                 this.lastCell = null;
             }
             if (!this.isRunning) {
-                if (this.webglAvailable && this.useGpuSimulation) {
-                    const area = this.gridWidth * this.gridHeight;
-                    if (area < this.GPU_STATS_DISABLE_DURING_RUN_AREA) {
-                        this.updateGpuStats(true);
-                    }
-                } else {
+                if (!(this.webglAvailable && this.useGpuSimulation)) {
                     this.ensureCpuGridSynced();
                 }
             }
@@ -1829,14 +1843,22 @@ class ConwaysGame {
         const ctx = this.ctx;
         ctx.strokeStyle = '#323232';
 
-        // Calculate visible range
-        const startX = Math.max(0, Math.floor(-this.camera.x / (this.cellSize * this.camera.zoom)));
-        const startY = Math.max(0, Math.floor(-this.camera.y / (this.cellSize * this.camera.zoom)));
-        const endX = Math.min(this.gridWidth, Math.ceil((this.canvas.width - this.camera.x) / (this.cellSize * this.camera.zoom)));
-        const endY = Math.min(this.gridHeight, Math.ceil((this.canvas.height - this.camera.y) / (this.cellSize * this.camera.zoom)));
+        const renderCameraX = Math.round(this.camera.x);
+        const renderCameraY = Math.round(this.camera.y);
+        const scaledCell = this.cellSize * this.camera.zoom;
+        const toScreen = (x, y) => ({
+            x: x * scaledCell + renderCameraX,
+            y: y * scaledCell + renderCameraY
+        });
 
-        const topLeft = this.gridToScreen(0, 0);
-        const bottomRight = this.gridToScreen(this.gridWidth, this.gridHeight);
+        // Calculate visible range
+        const startX = Math.max(0, Math.floor(-renderCameraX / scaledCell));
+        const startY = Math.max(0, Math.floor(-renderCameraY / scaledCell));
+        const endX = Math.min(this.gridWidth, Math.ceil((this.canvas.width - renderCameraX) / scaledCell));
+        const endY = Math.min(this.gridHeight, Math.ceil((this.canvas.height - renderCameraY) / scaledCell));
+
+        const topLeft = toScreen(0, 0);
+        const bottomRight = toScreen(this.gridWidth, this.gridHeight);
         const bgX = Math.max(0, topLeft.x);
         const bgY = Math.max(0, topLeft.y);
         const bgW = Math.max(0, Math.min(this.canvas.width, bottomRight.x) - bgX);
@@ -1849,17 +1871,17 @@ class ConwaysGame {
         // Draw grid lines
         ctx.beginPath();
         for (let x = startX; x <= endX; x++) {
-            const screenX = this.gridToScreen(x, 0).x;
-            const startPos = this.gridToScreen(0, startY).y;
-            const endPos = this.gridToScreen(0, endY).y;
+            const screenX = toScreen(x, 0).x;
+            const startPos = toScreen(0, startY).y;
+            const endPos = toScreen(0, endY).y;
             ctx.moveTo(screenX, startPos);
             ctx.lineTo(screenX, endPos);
         }
 
         for (let y = startY; y <= endY; y++) {
-            const screenY = this.gridToScreen(0, y).y;
-            const startPos = this.gridToScreen(startX, 0).x;
-            const endPos = this.gridToScreen(endX, 0).x;
+            const screenY = toScreen(0, y).y;
+            const startPos = toScreen(startX, 0).x;
+            const endPos = toScreen(endX, 0).x;
             ctx.moveTo(startPos, screenY);
             ctx.lineTo(endPos, screenY);
         }
@@ -1870,7 +1892,7 @@ class ConwaysGame {
         for (let y = startY; y < endY; y++) {
             for (let x = startX; x < endX; x++) {
                 if (this.grid[y][x]) {
-                    const pos = this.gridToScreen(x, y);
+                    const pos = toScreen(x, y);
                     ctx.fillRect(
                         pos.x + 1,
                         pos.y + 1,
@@ -1886,12 +1908,7 @@ class ConwaysGame {
         const info = document.getElementById('statsInfo');
         let gpuStatsIntervalText = '';
         if (this.webglAvailable && this.useGpuSimulation) {
-            const area = this.gridWidth * this.gridHeight;
-            if (area >= this.GPU_STATS_DISABLE_DURING_RUN_AREA) {
-                gpuStatsIntervalText = '<br>GPU Stats: disabled for large grid';
-            } else {
-                gpuStatsIntervalText = `<br>GPU Stats: 1/${this.getGpuStatsSampleInterval()} ticks`;
-            }
+            gpuStatsIntervalText = '<br>GPU Stats: activated-diff, per-tick, accurate';
         }
         info.innerHTML = `
             Rule: ${this.ruleLabel}<br>
@@ -2040,9 +2057,10 @@ class ConwaysGame {
             const requestedSize = Math.max(50, parsed);
             const maxAllowed = this.getMaxAllowedGridSize();
             let nextSize = requestedSize;
+            let wasClamped = false;
             if (requestedSize > maxAllowed) {
                 nextSize = maxAllowed;
-                alert(`Requested size ${requestedSize} is too large. Max safe size on this device is ${maxAllowed}.`);
+                wasClamped = true;
             }
             gridSizeInput.value = nextSize;
             if (nextSize !== this.gridWidth || nextSize !== this.gridHeight) {
@@ -2053,18 +2071,24 @@ class ConwaysGame {
                 }
             }
             syncTickRateConstraintForGrid(nextSize);
+            if (wasClamped) {
+                alert(`Requested size ${requestedSize} is too large. Max safe size on this device is ${maxAllowed}.`);
+            }
         };
 
         applyGridSizeButton.addEventListener('click', applyGridSize);
         gridSizeInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
+                e.preventDefault();
                 applyGridSize();
                 gridSizeInput.blur();
             } else if (e.key === 'Escape') {
+                e.preventDefault();
                 gridSizeInput.value = this.gridWidth;
                 gridSizeInput.blur();
             }
         });
+        gridSizeInput.addEventListener('blur', applyGridSize);
 
         gridSizeRow.appendChild(gridSizeLabel);
         gridSizeRow.appendChild(gridSizeInput);
@@ -2096,7 +2120,6 @@ class ConwaysGame {
                     if (this.webglAvailable && this.useGpuSimulation) {
                         this.runGpuStep();
                         this.tickCount += 1;
-                        this.updateGpuStats();
                     } else {
                         this.updateGrid();
                         if (this.webglAvailable) {
